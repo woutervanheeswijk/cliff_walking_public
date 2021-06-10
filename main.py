@@ -1,5 +1,5 @@
 """
-Implementation of the cliff walking problem presented in Sutton & Barto's Reinforcement Learning (2020).
+Implementation of the cliff walking problem presented in Sutton & Barto's Reinforcement Learning (2018) book.
 The problem is solved with both Q-learning (off-policy learning) and SARSA (on-policy learning).
 Carefully following the algorithmic steps should give a feeling for the basis of Reinforcement Learning.
 The output consists of the learned path, the average rewards over time, and average # steps over time.

@@ -25,8 +25,8 @@ def plot_rewards(
 
     sns.set_theme(style="darkgrid")
 
-    sns.lineplot(data=mean_reward_qlearning, label="SARSA")
-    sns.lineplot(data=mean_reward_sarsa, label="Q-learning")
+    sns.lineplot(data=mean_reward_sarsa, label="SARSA")
+    sns.lineplot(data=mean_reward_qlearning, label="Q-learning")
 
     # Plot graph
     plt.xticks(positions, labels)
