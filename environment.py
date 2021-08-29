@@ -10,9 +10,11 @@ def check_game_over(
     # Game over when reached goal, fell down cliff, or exceeded 1000 steps
     game_over = (
         True
-        if (state == goal_pos or state in cliff_pos or number_of_steps > 1000)
+        if (state == goal_pos or state in cliff_pos or number_of_steps > 100)
         else False
     )
+    if state == goal_pos and number_of_steps > 1:
+        print('goal reached')
 
     return game_over
 
