@@ -16,7 +16,7 @@ if __name__ == "__main__":
     # Set input parameters
     num_episodes = 10000  # Number of training episodes
     gamma = 0.9  # Discount rate γ 0.9
-    alpha = 0.001  # Learning rate α (0.001 works!)
+    alpha = 0.001  # Learning rate α 0.001
     epsilon = 0.05  # Exploration rate ε
 
     # Run Deep Q-learning

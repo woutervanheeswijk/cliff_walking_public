@@ -177,7 +177,7 @@ def deepqlearning(
     agent_pos, env, cliff_pos, goal_pos, game_over = init_env()
 
     opt = tf.keras.optimizers.Adam(learning_rate=alpha)
-    update_frequency_target_network = 10
+
 
     steps_cache = np.zeros(num_episodes)
     rewards_cache = np.zeros(num_episodes)
@@ -190,8 +190,11 @@ def deepqlearning(
 
     replay_buffer = []
     min_buffer_size = 10
-    batch_size = 5  # Number of observations per update (5 works well?)
+    batch_size = 5  # Number of observations per update
     training = True
+    step_counter = 0
+    learning_frequency = batch_size # Set equal to batch size for fair comparisons
+    update_frequency_target_network = 19
 
     for episode in range(num_episodes):
 
@@ -243,6 +246,7 @@ def deepqlearning(
                 # Store observation in replay buffer
                 observation = [state, action, reward, next_state]
 
+                # replay_buffer = []
                 replay_buffer.append(observation)
 
                 # Check whether game is over
@@ -250,8 +254,11 @@ def deepqlearning(
                     next_state, cliff_pos, goal_pos, steps_cache[episode]
                 )
 
-                # update network if (i) buffer sufficiently large, (ii) game over and (iii) in training
-                if len(replay_buffer) >= min_buffer_size and training:
+                step_counter += 1
+
+                # Update network if (i) buffer sufficiently large and (ii) learning frequency matched and
+                # (iii) in training
+                if len(replay_buffer) >= min_buffer_size and step_counter % learning_frequency == 0 and training:
 
                     observations = random.choices(replay_buffer, k=batch_size)
                     loss_value = 0
