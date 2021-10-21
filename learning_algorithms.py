@@ -1,11 +1,17 @@
 import numpy as np
 
-from environment import init_env, mark_path, check_game_over
+from environment import (
+    init_env,
+    mark_path,
+    check_game_over,
+    encode_state,
+    get_state,
+    get_position,
+)
 from qtable import init_q_table, update_q_table
 from actions import (
     epsilon_greedy_action,
     move_agent,
-    get_state,
     get_max_qvalue,
     get_reward,
 )
@@ -18,13 +24,21 @@ import tensorflow.keras.initializers as initializers
 
 import random
 
+STATE_DIM = 48
+ACTION_DIM = 4
+# TO DO: separate files for each learning algorithm
+# TO DO: class structure for agents
 
-def qlearning(
-    num_episodes: int, gamma: float, alpha: float, epsilon: float
-) -> (np.array, list):
+
+def qlearning(sim_input, sim_output) -> (np.array, list):
     """
     Q-learning algorithm
     """
+    num_episodes = sim_input.num_episodes
+    gamma = sim_input.gamma
+    alpha = sim_input.alpha
+    epsilon = sim_input.epsilon
+
     q_table = init_q_table()
     steps_cache = np.zeros(num_episodes)
     rewards_cache = np.zeros(num_episodes)
@@ -75,13 +89,23 @@ def qlearning(
 
         steps_cache[episode] = num_steps
 
-    return q_table, env, steps_cache, rewards_cache
+    sim_output.step_cache.append(steps_cache)
+    sim_output.reward_cache.append(rewards_cache)
+
+    sim_output.env_cache.append(env)
+    sim_output.name_cache.append("Q-learning")
+
+    return q_table, sim_output
 
 
-def sarsa(num_episodes, gamma: float, alpha: float, epsilon: float) -> (np.array, list):
+def sarsa(sim_input, sim_output) -> (np.array, list):
     """
     SARSA: on-policy RL algorithm to train agent
     """
+    num_episodes = sim_input.num_episodes
+    gamma = sim_input.gamma
+    alpha = sim_input.alpha
+    epsilon = sim_input.epsilon
 
     q_table = init_q_table()
     steps_cache = np.zeros(num_episodes)
@@ -141,21 +165,209 @@ def sarsa(num_episodes, gamma: float, alpha: float, epsilon: float) -> (np.array
 
             steps_cache[episode] += 1
 
-    return q_table, env, steps_cache, rewards_cache
+    sim_output.step_cache.append(steps_cache)
+    sim_output.reward_cache.append(rewards_cache)
+
+    sim_output.env_cache.append(env)  # array of np arrays
+    sim_output.name_cache.append("SARSA")
+
+    return q_table, sim_output
 
 
-def deepqlearning(
-        num_episodes: int, gamma: float, alpha: float, epsilon: float
-) -> (np.array, list):
+def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
+    """
+    REINFORCE with discrete policy gradient (manual weight updates)
+    """
+
+    num_episodes = sim_input.num_episodes
+    gamma = sim_input.gamma
+    alpha = sim_input.alpha
+
+    # (s,a) variant
+    def softmax(theta: np.array, action_encoded: list, state: int) -> float:
+        return np.exp(theta[0, state].dot(action_encoded[0]))
+
+    # Post-decision variant
+ #   def softmax(theta: np.array, state_encoded: list, state: int) -> float:
+ #       return np.exp(theta[0].dot(state_encoded[0]))
+
+    def pi(state: int):
+        """\pi(a | s)"""
+        weights = np.zeros(ACTION_DIM)
+        for action in range(ACTION_DIM):
+
+            action_encoded = encode_state(action, ACTION_DIM)
+
+            # Post-decision variant
+      #      agent_pos = get_position(state)
+      #      agent_pos = move_agent(agent_pos, action)
+      #      next_state = get_state(agent_pos)
+      #      next_state_encoded = encode_state(next_state, STATE_DIM)
+      #      weights[action] = softmax(theta, next_state_encoded, next_state)
+
+            # (s,a) variant
+            weights[action] = softmax(
+                theta, action_encoded, state
+            )
+        return weights / np.sum(weights)
+
+    def cum_rewards(gamma, t, rewards):
+        """Reward function."""
+        total = 0
+        for tau in range(t, len(rewards)):
+            total += gamma ** (tau - t) * rewards[tau]
+        return total
+
+    def update_action_probabilities(
+        alpha: float,
+        gamma: float,
+        theta: np.array,
+        state_trajectory: list,
+        action_trajectory: list,
+        reward_trajectory: list,
+    ) -> np.array:
+
+        for t in range(len(reward_trajectory)):
+            state = state_trajectory[t]
+            action = action_trajectory[t]
+            cum_reward = cum_rewards(gamma, t, reward_trajectory)
+
+            action_probs = pi(state)
+
+            # Construct encoded state vector
+            # Get next state
+            agent_pos = get_position(state)
+
+            # Post-decision variant
+      #      next_pos = move_agent(agent_pos, action)
+      #      next_state = get_state(next_pos) # Post-decision state
+      #      state_input = encode_state(next_state, STATE_DIM)
+
+            # Construct weighted state vector
+ #           weighted_state_input = np.zeros((1, STATE_DIM))
+
+            # (s,a) variant
+            action_input = np.zeros([ACTION_DIM])
+            action_input[action] = 1
+
+            # Construct weighted state vector
+            weighted_state_input = np.zeros((1, ACTION_DIM))
+
+            for action in range(ACTION_DIM):
+                # Post decision variant
+          #          next_pos = move_agent(agent_pos, action)
+          #          next_state = get_state(next_pos)
+          #          next_state_encoded = encode_state(next_state, STATE_DIM)
+          #          weighted_state_input[0] += action_probs[action] * next_state_encoded[0]
+
+                # (s,a) variant
+                action_input2 = np.zeros([ACTION_DIM])
+                action_input2[action] = 1
+                weighted_state_input[0] += action_probs[action] * action_input2
+
+            # Return score function (state vector - weighted state vector over all actions)
+        #    score_function = state_input - weighted_state_input # Post-decision variant
+            score_function = action_input - weighted_state_input # (s,a) variant
+
+            # Update theta
+            # (s,a) variant
+            theta[0, state] += alpha * cum_reward * score_function[0]
+
+            # Post-decision variant
+      #      theta[0] += alpha * cum_reward * score_function[0]
+        return theta
+
+    # Initialize theta
+  #  theta = np.zeros([1,STATE_DIM]) #Post-decision variant
+    theta = np.zeros([1, STATE_DIM, ACTION_DIM])  # state-action variant
+
+    steps_cache = np.zeros(num_episodes)
+    rewards_cache = np.zeros(num_episodes)
+
+    # Iterate over episodes
+    for episode in range(num_episodes):
+
+        if episode >= 1:
+            print(episode, ":", steps_cache[episode - 1])
+
+        # Initialize reward trajectory
+        reward_trajectory = []
+        action_trajectory = []
+        state_trajectory = []
+
+        # Initialize environment and agent position
+        agent_pos, env, cliff_pos, goal_pos, game_over = init_env()
+
+        while not game_over:
+
+            # Get state corresponding to agent position
+            state = get_state(agent_pos)
+
+            # Get probabilities per action from current policy
+            action_probs = pi(state)
+
+            # Select random action according to policy
+            action = np.random.choice(4, p=np.squeeze(action_probs))
+
+            # Move agent to next position
+            agent_pos = move_agent(agent_pos, action)
+
+            # Mark visited path
+            env = mark_path(agent_pos, env)
+
+            # Determine next state
+            next_state = get_state(agent_pos)
+
+            # Compute and store reward
+            reward = get_reward(next_state, cliff_pos, goal_pos)
+            rewards_cache[episode] += reward
+
+            state_trajectory.append(state)
+            action_trajectory.append(action)
+            reward_trajectory.append(reward)
+
+            # Check whether game is over
+            game_over = check_game_over(
+                next_state, cliff_pos, goal_pos, steps_cache[episode]
+            )
+
+            steps_cache[episode] += 1
+
+        # Update action probabilities at end of each episode
+        theta = update_action_probabilities(
+            alpha, gamma, theta, state_trajectory, action_trajectory, reward_trajectory
+        )
+
+    all_probs = np.zeros([STATE_DIM, ACTION_DIM])
+    for state in range(48):
+        action_probs = pi(state)
+        all_probs[state] = action_probs
+
+    sim_output.step_cache.append(steps_cache)
+    sim_output.reward_cache.append(rewards_cache)
+
+    sim_output.env_cache.append(env)
+    sim_output.name_cache.append("Discrete policy gradient")
+
+    return all_probs, sim_output
+
+
+def deepqlearning(sim_input, sim_output) -> (np.array, list):
+
+    num_episodes = sim_input.num_episodes
+    gamma = sim_input.gamma
+    alpha = sim_input.alpha
+    epsilon = sim_input.epsilon
+
     def mean_squared_error_loss(q_value, reward):
         """Compute mean squared error loss"""
         loss_critic = 0.5 * (q_value - reward) ** 2
 
         return loss_critic
 
-    def construct_q_network(state_dim: int, action_dim: int):
+    def construct_q_network(STATE_DIM: int, ACTION_DIM: int):
         """Construct the critic network with q-values per action as output"""
-        inputs = layers.Input(shape=(state_dim,))  # input dimension
+        inputs = layers.Input(shape=(STATE_DIM,))  # input dimension
         hidden1 = layers.Dense(
             25, activation="relu", kernel_initializer=initializers.he_normal()
         )(inputs)
@@ -166,7 +378,7 @@ def deepqlearning(
             25, activation="relu", kernel_initializer=initializers.he_normal()
         )(hidden2)
         q_values = layers.Dense(
-            action_dim, kernel_initializer=initializers.Zeros(), activation="linear"
+            ACTION_DIM, kernel_initializer=initializers.Zeros(), activation="linear"
         )(hidden3)
 
         q_network = keras.Model(inputs=inputs, outputs=[q_values])
@@ -178,13 +390,10 @@ def deepqlearning(
 
     opt = tf.keras.optimizers.Adam(learning_rate=alpha)
 
-
     steps_cache = np.zeros(num_episodes)
     rewards_cache = np.zeros(num_episodes)
 
-    state_dim = 48
-    action_dim = 4
-    q_network = construct_q_network(state_dim, action_dim)
+    q_network = construct_q_network(STATE_DIM, ACTION_DIM)
     target_network = tf.keras.models.clone_model(q_network)  # Copy network architecture
     target_network.set_weights(q_network.get_weights())  # Copy network weights
 
@@ -193,7 +402,7 @@ def deepqlearning(
     batch_size = 5  # Number of observations per update
     training = True
     step_counter = 0
-    learning_frequency = batch_size # Set equal to batch size for fair comparisons
+    learning_frequency = batch_size  # Set equal to batch size for fair comparisons
     update_frequency_target_network = 19
 
     for episode in range(num_episodes):
@@ -216,18 +425,19 @@ def deepqlearning(
 
                 # Select action using ε-greedy policy
                 # Obtain q-values from network
-                state_input = np.zeros((1, state_dim))
-                state_input[0, state] = 1
-                q_values = tf.stop_gradient(q_network(state_input))
+                #    state_encoded = np.zeros((1, STATE_DIM))
+                #    state_encoded[0, state] = 1
+                state_encoded = encode_state(state, STATE_DIM)
+                q_values = tf.stop_gradient(q_network(state_encoded))
 
                 sample_epsilon = np.random.rand()
                 if sample_epsilon <= epsilon and training:
                     # Select random action
-                    action = np.random.choice(action_dim)
+                    action = np.random.choice(ACTION_DIM)
                     agent_pos = move_agent(agent_pos, action)
                 else:
                     # Select action with highest q-value
-                    action = np.argmax(q_values[0])
+                    action = int(np.argmax(q_values[0]))
                     agent_pos = move_agent(agent_pos, action)
 
                 # Mark visited path
@@ -236,8 +446,8 @@ def deepqlearning(
                 # Determine next state
                 next_state = get_state(agent_pos)
 
-                next_state_input = np.zeros((1, state_dim))
-                next_state_input[0, next_state] = 1
+                next_state_encoded = np.zeros((1, STATE_DIM))
+                next_state_encoded[0, next_state] = 1
 
                 # Compute and store reward
                 reward = get_reward(next_state, cliff_pos, goal_pos)
@@ -258,7 +468,11 @@ def deepqlearning(
 
                 # Update network if (i) buffer sufficiently large and (ii) learning frequency matched and
                 # (iii) in training
-                if len(replay_buffer) >= min_buffer_size and step_counter % learning_frequency == 0 and training:
+                if (
+                    len(replay_buffer) >= min_buffer_size
+                    and step_counter % learning_frequency == 0
+                    and training
+                ):
 
                     observations = random.choices(replay_buffer, k=batch_size)
                     loss_value = 0
@@ -272,12 +486,14 @@ def deepqlearning(
 
                         # Select next action with highest q-value
                         # Check whether game is over (ignoring # steps)
-                        game_over_update = check_game_over(next_state, cliff_pos, goal_pos, 0)
+                        game_over_update = check_game_over(
+                            next_state, cliff_pos, goal_pos, 0
+                        )
 
                         if game_over_update:
                             next_q_value = 0
                         else:
-                            next_state_input = np.zeros((1, state_dim))
+                            next_state_input = np.zeros((1, STATE_DIM))
                             next_state_input[0, next_state] = 1
                             next_q_values = tf.stop_gradient(
                                 target_network(next_state_input)
@@ -287,7 +503,7 @@ def deepqlearning(
 
                         observed_q_value = reward + (gamma * next_q_value)
 
-                        state_input = np.zeros((1, state_dim))
+                        state_input = np.zeros((1, STATE_DIM))
                         state_input[0, state] = 1
 
                         q_values = q_network(state_input)
@@ -301,9 +517,7 @@ def deepqlearning(
                     loss_value /= batch_size
 
                     # Compute gradients
-                    grads = tape.gradient(
-                        loss_value, q_network.trainable_variables
-                    )
+                    grads = tape.gradient(loss_value, q_network.trainable_variables)
 
                     # Apply gradients to update q-network weights
                     opt.apply_gradients(zip(grads, q_network.trainable_variables))
@@ -314,10 +528,10 @@ def deepqlearning(
 
                 steps_cache[episode] += 1
 
-    return q_network, env, steps_cache, rewards_cache
+    sim_output.step_cache.append(steps_cache)
+    sim_output.reward_cache.append(rewards_cache)
 
+    sim_output.env_cache.append(env)
+    sim_output.name_cache.append("Deep Q-learning")
 
-
-
-
-
+    return q_network, sim_output

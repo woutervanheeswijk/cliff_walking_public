@@ -45,34 +45,6 @@ def move_agent(agent_pos: tuple, action: int) -> tuple:
 
     return agent_pos
 
-
-def get_state(agent_pos: tuple) -> int:
-    """
-    Obtain state corresponding to agent position
-    """
-    x_dim = 12
-    (pos_x, pos_y) = agent_pos
-    state = x_dim * pos_x + pos_y
-
-    return state
-
-# Currently not used
-def check_feasible_action(q_values: list, agent_pos: tuple):
-
-    feasible_action = False
-    while not feasible_action:
-        action = np.argmax(q_values)
-
-        q_value = q_values[0, action]
-
-        new_pos = move_agent(agent_pos, action)
-        if not new_pos == agent_pos:
-            feasible_action = True
-        else:
-            q_values[action] = float("-inf")
-
-    return feasible_action, new_pos
-
 def get_max_qvalue(state: int, q_table: np.array) -> float:
     """Retrieve best Q-value for state from table"""
     maximum_state_value = np.amax(q_table[:, state])
@@ -91,7 +63,7 @@ def get_reward(state: int, cliff_pos: np.array, goal_pos: int) -> int:
     if state == goal_pos:
         reward = 10
 
-    # Reward of -100 for falling down cliff
+    # Reward of -10 for falling down cliff
     if state in cliff_pos:
         reward = -10
 
