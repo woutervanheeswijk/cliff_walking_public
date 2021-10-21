@@ -188,7 +188,7 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
         """Softmax function"""
         return np.exp(theta[0, state].dot(action_encoded[0]))
 
-    def pi(state: int) -> np.float:
+    def pi(state: int) -> np.array:
         """Policy: probability distribution of actions in given state"""
         probs = np.zeros(ACTION_DIM)
         for action in range(ACTION_DIM):
@@ -200,10 +200,10 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
 
     def cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
         """Cumulative reward function"""
-        total = 0
+        cum_reward = 0
         for tau in range(t, len(rewards)):
-            total += gamma ** (tau - t) * rewards[tau]
-        return total
+            cum_reward += gamma ** (tau - t) * rewards[tau]
+        return cum_reward
 
     def update_action_probabilities(
         alpha: float,
