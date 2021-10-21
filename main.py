@@ -29,7 +29,8 @@ if __name__ == "__main__":
             self.epsilon = epsilon  # Exploration rate ε
 
         def __str__(self):
-            return "# episodes" + str(self.num_episodes)
+            return "# episodes: " + str(self.num_episodes) + "gamma: " + str(self.gamma) \
+                   + "alpha: " + str(self.alpha) + "epsilon: " + str(self.epsilon)
 
     run_algorithms = {
  #       "Q-Learning",
@@ -37,6 +38,8 @@ if __name__ == "__main__":
         "Discrete policy gradient",
  #       "Deep Q-Learning",
     }
+
+
 
     class sim_output:
         def __init__(self, rewards_cache, step_cache, env_cache, name_cache):
@@ -50,7 +53,7 @@ if __name__ == "__main__":
     )
 
     if "Discrete policy gradient" in run_algorithms:
-        sim_input = sim_init(num_episodes=10000, gamma=0.9, alpha=0.005, epsilon=0)
+        sim_input = sim_init(num_episodes=10000, gamma=0.8, alpha=0.005, epsilon=0)
         all_probs, sim_output = discrete_policy_gradient(sim_input, sim_output)
 
     # Run Deep Q-learning
@@ -60,7 +63,7 @@ if __name__ == "__main__":
 
     # Run SARSA
     if "SARSA" in run_algorithms:
-        sim_input = sim_init(num_episodes=10000, gamma=0.9, alpha=0.1, epsilon=0.05)
+        sim_input = sim_init(num_episodes=10000, gamma=0.8, alpha=0.1, epsilon=0.05)
         q_table_sarsa, sim_output = sarsa(sim_input, sim_output)
 
     # Run Q-learning

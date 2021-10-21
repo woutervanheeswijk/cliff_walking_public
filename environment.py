@@ -60,12 +60,12 @@ def env_to_text(env: np.array) -> str:
     return env
 
 
-def encode_state(state: int, STATE_DIM: int) -> list:
-    """Encode state as one-hot vector"""
-    state_encoded = np.zeros((1, STATE_DIM))
-    state_encoded[0, state] = 1
+def encode_vector(index: int, dim: int) -> list:
+    """Encode vector as one-hot vector"""
+    vector_encoded = np.zeros((1, dim))
+    vector_encoded[0, index] = 1
 
-    return state_encoded
+    return vector_encoded
 
 
 

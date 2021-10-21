@@ -4,7 +4,7 @@ from environment import (
     init_env,
     mark_path,
     check_game_over,
-    encode_state,
+    encode_vector,
     get_state,
     get_position,
 )
@@ -26,8 +26,9 @@ import random
 
 STATE_DIM = 48
 ACTION_DIM = 4
-# TO DO: separate files for each learning algorithm
-# TO DO: class structure for agents
+
+# TODO: separate files for each learning algorithm
+# TODO: class structure for agents
 
 
 def qlearning(sim_input, sim_output) -> (np.array, list):
@@ -183,36 +184,22 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
     gamma = sim_input.gamma
     alpha = sim_input.alpha
 
-    # (s,a) variant
-    def softmax(theta: np.array, action_encoded: list, state: int) -> float:
+    def softmax(theta: np.array, action_encoded: list, state: int) -> np.float:
+        """Softmax function"""
         return np.exp(theta[0, state].dot(action_encoded[0]))
 
-    # Post-decision variant
- #   def softmax(theta: np.array, state_encoded: list, state: int) -> float:
- #       return np.exp(theta[0].dot(state_encoded[0]))
-
-    def pi(state: int):
-        """\pi(a | s)"""
-        weights = np.zeros(ACTION_DIM)
+    def pi(state: int) -> np.float:
+        """Policy: probability distribution of actions in given state"""
+        probs = np.zeros(ACTION_DIM)
         for action in range(ACTION_DIM):
-
-            action_encoded = encode_state(action, ACTION_DIM)
-
-            # Post-decision variant
-      #      agent_pos = get_position(state)
-      #      agent_pos = move_agent(agent_pos, action)
-      #      next_state = get_state(agent_pos)
-      #      next_state_encoded = encode_state(next_state, STATE_DIM)
-      #      weights[action] = softmax(theta, next_state_encoded, next_state)
-
-            # (s,a) variant
-            weights[action] = softmax(
+            action_encoded = encode_vector(action, ACTION_DIM)
+            probs[action] = softmax(
                 theta, action_encoded, state
             )
-        return weights / np.sum(weights)
+        return probs / np.sum(probs)
 
-    def cum_rewards(gamma, t, rewards):
-        """Reward function."""
+    def cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
+        """Cumulative reward function"""
         total = 0
         for tau in range(t, len(rewards)):
             total += gamma ** (tau - t) * rewards[tau]
@@ -232,54 +219,31 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
             action = action_trajectory[t]
             cum_reward = cum_rewards(gamma, t, reward_trajectory)
 
+            # Determine action probabilities with policy
             action_probs = pi(state)
 
-            # Construct encoded state vector
-            # Get next state
-            agent_pos = get_position(state)
+            # Encode action
+            phi = encode_vector(action,ACTION_DIM)
 
-            # Post-decision variant
-      #      next_pos = move_agent(agent_pos, action)
-      #      next_state = get_state(next_pos) # Post-decision state
-      #      state_input = encode_state(next_state, STATE_DIM)
+            # Construct weighted state-action vector (average phi over all actions)
+            weighted_phi = np.zeros((1, ACTION_DIM))
 
-            # Construct weighted state vector
- #           weighted_state_input = np.zeros((1, STATE_DIM))
-
-            # (s,a) variant
-            action_input = np.zeros([ACTION_DIM])
-            action_input[action] = 1
-
-            # Construct weighted state vector
-            weighted_state_input = np.zeros((1, ACTION_DIM))
-
+            # For demonstration only, simply copies probability vector
             for action in range(ACTION_DIM):
-                # Post decision variant
-          #          next_pos = move_agent(agent_pos, action)
-          #          next_state = get_state(next_pos)
-          #          next_state_encoded = encode_state(next_state, STATE_DIM)
-          #          weighted_state_input[0] += action_probs[action] * next_state_encoded[0]
+             #   action_input = np.zeros([ACTION_DIM])
+            #    action_input[action] = 1
+                action_input = encode_vector(action, ACTION_DIM)
+                weighted_phi[0] += action_probs[action] * action_input[0]
 
-                # (s,a) variant
-                action_input2 = np.zeros([ACTION_DIM])
-                action_input2[action] = 1
-                weighted_state_input[0] += action_probs[action] * action_input2
+            # Return score function (phi - weighted phi)
+            score_function = phi - weighted_phi
 
-            # Return score function (state vector - weighted state vector over all actions)
-        #    score_function = state_input - weighted_state_input # Post-decision variant
-            score_function = action_input - weighted_state_input # (s,a) variant
-
-            # Update theta
-            # (s,a) variant
+            # Update theta (only update for current state, no changes for other states)
             theta[0, state] += alpha * cum_reward * score_function[0]
-
-            # Post-decision variant
-      #      theta[0] += alpha * cum_reward * score_function[0]
         return theta
 
     # Initialize theta
-  #  theta = np.zeros([1,STATE_DIM]) #Post-decision variant
-    theta = np.zeros([1, STATE_DIM, ACTION_DIM])  # state-action variant
+    theta = np.zeros([1, STATE_DIM, ACTION_DIM])
 
     steps_cache = np.zeros(num_episodes)
     rewards_cache = np.zeros(num_episodes)
@@ -425,9 +389,7 @@ def deepqlearning(sim_input, sim_output) -> (np.array, list):
 
                 # Select action using ε-greedy policy
                 # Obtain q-values from network
-                #    state_encoded = np.zeros((1, STATE_DIM))
-                #    state_encoded[0, state] = 1
-                state_encoded = encode_state(state, STATE_DIM)
+                state_encoded = encode_vector(state, STATE_DIM)
                 q_values = tf.stop_gradient(q_network(state_encoded))
 
                 sample_epsilon = np.random.rand()
