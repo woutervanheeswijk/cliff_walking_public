@@ -198,12 +198,21 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
             )
         return probs / np.sum(probs)
 
-    def cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
+    def compute_cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
         """Cumulative reward function"""
         cum_reward = 0
         for tau in range(t, len(rewards)):
             cum_reward += gamma ** (tau - t) * rewards[tau]
         return cum_reward
+
+    def get_entropy_bonus(action_probs: list) ->float:
+        entropy_bonus = 0
+        #action_probs=action_probs.numpy()
+      #  action_probs=np.squeeze(action_probs)
+        for prob_action in action_probs:
+            entropy_bonus -= prob_action * np.log(prob_action + 1e-5)
+
+        return float(entropy_bonus)
 
     def update_action_probabilities(
         alpha: float,
@@ -212,15 +221,17 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
         state_trajectory: list,
         action_trajectory: list,
         reward_trajectory: list,
+        probs_trajectory: list,
     ) -> np.array:
 
         for t in range(len(reward_trajectory)):
             state = state_trajectory[t]
             action = action_trajectory[t]
-            cum_reward = cum_rewards(gamma, t, reward_trajectory)
+            cum_reward = compute_cum_rewards(gamma, t, reward_trajectory)
 
             # Determine action probabilities with policy
-            action_probs = pi(state)
+          #  action_probs = pi(state)
+            action_probs = probs_trajectory[t]
 
             # Encode action
             phi = encode_vector(action,ACTION_DIM)
@@ -230,8 +241,6 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
 
             # For demonstration only, simply copies probability vector
             for action in range(ACTION_DIM):
-             #   action_input = np.zeros([ACTION_DIM])
-            #    action_input[action] = 1
                 action_input = encode_vector(action, ACTION_DIM)
                 weighted_phi[0] += action_probs[action] * action_input[0]
 
@@ -258,6 +267,7 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
         reward_trajectory = []
         action_trajectory = []
         state_trajectory = []
+        probs_trajectory = []
 
         # Initialize environment and agent position
         agent_pos, env, cliff_pos, goal_pos, game_over = init_env()
@@ -284,11 +294,13 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
 
             # Compute and store reward
             reward = get_reward(next_state, cliff_pos, goal_pos)
-            rewards_cache[episode] += reward
+            entropy_bonus = get_entropy_bonus(action_probs)
+            rewards_cache[episode] += reward + entropy_bonus
 
             state_trajectory.append(state)
             action_trajectory.append(action)
             reward_trajectory.append(reward)
+            probs_trajectory.append(action_probs)
 
             # Check whether game is over
             game_over = check_game_over(
@@ -299,7 +311,7 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
 
         # Update action probabilities at end of each episode
         theta = update_action_probabilities(
-            alpha, gamma, theta, state_trajectory, action_trajectory, reward_trajectory
+            alpha, gamma, theta, state_trajectory, action_trajectory, reward_trajectory, probs_trajectory
         )
 
     all_probs = np.zeros([STATE_DIM, ACTION_DIM])
@@ -314,6 +326,191 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
     sim_output.name_cache.append("Discrete policy gradient")
 
     return all_probs, sim_output
+
+def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
+    """
+    Deep discrete policy gradient (Tensorflow 2.0)
+    """
+
+    num_episodes = sim_input.num_episodes
+    gamma = sim_input.gamma
+    alpha = sim_input.alpha
+
+    def cross_entropy_loss(prob_action: float, reward: float) -> float:
+        """Compute cross entropy loss"""
+        log_prob = tf.math.log(prob_action + 1e-5)
+        loss_actor = - reward * log_prob
+
+        return loss_actor
+
+    def construct_actor_network(STATE_DIM: int, ACTION_DIM: int):
+        """Construct the actor network with action probabilities as output"""
+        inputs = layers.Input(shape=(STATE_DIM,))  # input dimension
+        hidden1 = layers.Dense(25, activation="relu", kernel_initializer=initializers.he_uniform())(inputs)
+        hidden2 = layers.Dense(25, activation="relu", kernel_initializer=initializers.he_uniform())(hidden1)
+        hidden3 = layers.Dense(25, activation="relu", kernel_initializer=initializers.he_uniform())(hidden2)
+        probabilities = layers.Dense(ACTION_DIM, kernel_initializer=initializers.Ones(), activation="softmax")(
+            hidden3)
+
+        actor_network = keras.Model(inputs=inputs, outputs=[probabilities])
+
+        return actor_network
+
+    def compute_cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
+        """Cumulative reward function"""
+        cum_reward = 0
+        for tau in range(t, len(rewards)):
+            cum_reward += gamma ** (tau - t) * rewards[tau]
+        return cum_reward
+
+    def get_entropy_bonus(action_probs: np.array) ->float:
+        entropy_bonus = 0
+        action_probs=action_probs.numpy()
+        action_probs=np.squeeze(action_probs)
+        for prob_action in action_probs:
+            entropy_bonus -= prob_action * tf.math.log(prob_action + 1e-5)
+
+        return float(entropy_bonus)
+
+    def update_actor_network(
+            gamma: float,
+            actor_network,
+            state_trajectory: list,
+            action_trajectory: list,
+            reward_trajectory: list,
+    ) -> np.array:
+
+        my_losses = []
+
+        # Activate gradient tape
+        with tf.GradientTape() as tape:
+            my_cum_rewards = []
+            probs = []
+
+            # Loop over reward trajectory
+            for t in range(len(reward_trajectory)):
+                # Retrieve state, action and reward
+                state = state_trajectory[t]
+                action = action_trajectory[t]
+                cum_reward = compute_cum_rewards(gamma, t, reward_trajectory)
+                my_cum_rewards.append(cum_reward)
+
+                # Encode state
+                phi = encode_vector(state, STATE_DIM)
+
+                # Determine action probabilities with policy
+                action_probs = actor_network(phi)
+
+                # Compute cross-entropy loss
+                loss_value = cross_entropy_loss(action_probs[0, action], cum_reward)
+
+                # Append probabilities and losses
+                probs.append(action_probs[0, action])
+                my_losses.append(loss_value)
+
+            # Compute gradients
+            grads = tape.gradient(my_losses, actor_network.trainable_variables)
+
+            # Apply gradients to update actor network weights
+            opt.apply_gradients(zip(grads, actor_network.trainable_variables))
+
+        return actor_network
+
+    steps_cache = np.zeros(num_episodes)
+    rewards_cache = np.zeros(num_episodes)
+
+    stored_state_trajectories = []
+    stored_action_trajectories = []
+    stored_reward_trajectories = []
+
+    # Construct actor network
+    actor_network = construct_actor_network(STATE_DIM, ACTION_DIM)
+
+    # Define optimizer
+    opt = keras.optimizers.Adam(learning_rate=alpha)
+
+    # Iterate over episodes
+    for episode in range(num_episodes):
+
+        if episode >= 1:
+            print(episode, ":", steps_cache[episode - 1])
+
+        # Initialize reward trajectory
+        reward_trajectory = []
+        action_trajectory = []
+        state_trajectory = []
+
+        # Initialize environment and agent position
+        agent_pos, env, cliff_pos, goal_pos, game_over = init_env()
+
+        while not game_over:
+
+            # Get state corresponding to agent position
+            state = get_state(agent_pos)
+
+            # Encode state
+            phi = encode_vector(state, STATE_DIM)
+
+            # Get probabilities per action from current policy
+            action_probs = actor_network(phi)
+
+            # Select random action according to policy
+            action = np.random.choice(4, p=np.squeeze(action_probs))
+
+            # Move agent to next position
+            agent_pos = move_agent(agent_pos, action)
+
+            # Mark visited path
+            env = mark_path(agent_pos, env)
+
+            # Determine next state
+            next_state = get_state(agent_pos)
+
+            # Compute and store reward
+            reward = get_reward(next_state, cliff_pos, goal_pos)
+            entropy_bonus = get_entropy_bonus(action_probs)
+            rewards_cache[episode] += reward + entropy_bonus
+
+            state_trajectory.append(state)
+            action_trajectory.append(action)
+            reward_trajectory.append(reward)
+
+            # Check whether game is over
+            game_over = check_game_over(
+                next_state, cliff_pos, goal_pos, steps_cache[episode]
+            )
+
+            steps_cache[episode] += 1
+
+        # Update action probabilities at end of each episode
+        batch_size = 1
+        stored_state_trajectories.append(state_trajectory)
+        stored_action_trajectories.append(action_trajectory)
+        stored_reward_trajectories.append(reward_trajectory)
+        if episode % batch_size ==0 and episode>0:
+            for i in range(episode-batch_size, episode):
+                state_trajectory = stored_state_trajectories[i]
+                action_trajectory = stored_action_trajectories[i]
+                reward_trajectory = stored_reward_trajectories[i]
+                actor_network = update_actor_network(
+                     gamma, actor_network, state_trajectory, action_trajectory, reward_trajectory
+                )
+
+
+    all_probs = np.zeros([STATE_DIM, ACTION_DIM])
+    for state in range(48):
+        phi = encode_vector(state, STATE_DIM)
+        action_probs = actor_network(phi)
+        all_probs[state] = action_probs
+
+    sim_output.step_cache.append(steps_cache)
+    sim_output.reward_cache.append(rewards_cache)
+
+    sim_output.env_cache.append(env)
+    sim_output.name_cache.append("Deep policy gradient")
+
+    return all_probs, sim_output
+
 
 
 def deepqlearning(sim_input, sim_output) -> (np.array, list):

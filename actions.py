@@ -59,12 +59,12 @@ def get_reward(state: int, cliff_pos: np.array, goal_pos: int) -> int:
     # Reward of -1 for each move (including terminating)
     reward = -1
 
-    # Reward of +10 for reaching goal
+    # Reward of +100 for reaching goal
     if state == goal_pos:
-        reward = 10
+        reward = 100
 
-    # Reward of -10 for falling down cliff
+    # Reward of -100 for falling down cliff
     if state in cliff_pos:
-        reward = -10
+        reward = -100
 
     return reward

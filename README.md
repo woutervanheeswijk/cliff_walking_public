@@ -1,2 +1,8 @@
 # cliff_walking_public
-Cliff walking reinforcement learning example, with Q-learning, Deep Q-learning, and SARSA algorithms
+This project demonstrates a number of reinforcement learning algorithms, applied on Sutton & Barto's cliff walking problem.
+The project currently contains the following algorithms:
+- Q-learning, 
+- SARSA
+- Deep Q-learning
+- Discrete policy gradient
+- Deep policy gradient

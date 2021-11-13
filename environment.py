@@ -10,11 +10,14 @@ def check_game_over(
     # Game over when reached goal, fell down cliff, or exceeded 1000 steps
     game_over = (
         True
-        if (state == goal_pos  or state in cliff_pos or number_of_steps > 100)
+        if (state == goal_pos   or   state in cliff_pos or number_of_steps == 999)
         else False
     )
     if state == goal_pos and number_of_steps > 1:
         print("goal reached")
+
+  #  if state==17 and number_of_steps > 1:
+ #       print("fake goal reached")
 
     return game_over
 
@@ -76,7 +79,6 @@ def get_state(agent_pos: tuple) -> int:
     x_dim = 12
     (pos_x, pos_y) = agent_pos
     state = x_dim * pos_x + pos_y
-  #  state = pos_y * x_dim + pos_x
 
     return state
 
