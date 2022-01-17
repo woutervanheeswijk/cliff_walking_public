@@ -14,6 +14,7 @@ from actions import (
     move_agent,
     get_max_qvalue,
     get_reward,
+    compute_cum_rewards
 )
 
 # For deep learning
@@ -76,7 +77,7 @@ def qlearning(sim_input, sim_output) -> (np.array, list):
             rewards_cache[episode] += reward
 
             # Check whether game is over
-            game_over = check_game_over(next_state, cliff_pos, goal_pos, num_steps)
+            game_over = check_game_over(episode, next_state, cliff_pos, goal_pos, num_steps)
 
             # Determine maximum Q-value next state (off-policy)
             max_qvalue_next_state = get_max_qvalue(next_state, q_table)
@@ -145,7 +146,7 @@ def sarsa(sim_input, sim_output) -> (np.array, list):
             rewards_cache[episode] += reward
 
             # Check whether game is over
-            game_over = check_game_over(
+            game_over = check_game_over(episode,
                 next_state, cliff_pos, goal_pos, steps_cache[episode]
             )
 
@@ -175,6 +176,95 @@ def sarsa(sim_input, sim_output) -> (np.array, list):
     return q_table, sim_output
 
 
+def monte_carlo(sim_input, sim_output) -> (np.array, list):
+    """
+    Monte Carlo: full-trajectory RL algorithm to train agent
+    """
+    num_episodes = sim_input.num_episodes
+    gamma = sim_input.gamma
+    alpha = sim_input.alpha
+    epsilon = sim_input.epsilon
+
+    q_table = init_q_table()
+    steps_cache = np.zeros(num_episodes)
+    rewards_cache = np.zeros(num_episodes)
+
+    # Iterate over episodes
+    for episode in range(num_episodes):
+
+        # Set to target policy at final episode
+        if episode == len(range(num_episodes)) - 1:
+            epsilon = 0
+
+        # Initialize environment and agent position
+        agent_pos, env, cliff_pos, goal_pos, game_over = init_env()
+
+        state_trajectory = []
+        action_trajectory = []
+        reward_trajectory = []
+
+        while not game_over:
+
+            # Initialize state at start of new episode
+            if steps_cache[episode] == 0:
+                # Get state corresponding to agent position
+                state = get_state(agent_pos)
+
+                # Select action using ε-greedy policy
+                action = epsilon_greedy_action(state, q_table, epsilon)
+
+            # Retrieve state
+            state = get_state(agent_pos)
+
+            # Move agent to next position
+            agent_pos = move_agent(agent_pos, action)
+
+            # Mark visited path
+            env = mark_path(agent_pos, env)
+
+            # Determine next state
+            next_state = get_state(agent_pos)
+
+            # Compute and store reward
+            reward = get_reward(next_state, cliff_pos, goal_pos)
+            rewards_cache[episode] += reward
+
+            state_trajectory.append(state)
+            action_trajectory.append(action)
+            reward_trajectory.append(reward)
+
+            # Check whether game is over
+            game_over = check_game_over(episode,
+                next_state, cliff_pos, goal_pos, steps_cache[episode]
+            )
+
+            # Select next action using ε-greedy policy
+            next_action = epsilon_greedy_action(next_state, q_table, epsilon)
+
+            # Update state and action
+            action = next_action
+
+            steps_cache[episode] += 1
+
+        # At end of episode, update Q-table for full trajectory
+        for t in range(len(reward_trajectory)-1, 0, -1):
+
+            reward = reward_trajectory[t]
+            action = action_trajectory[t]
+            state = state_trajectory[t]
+
+            cum_reward = compute_cum_rewards(gamma, t, reward_trajectory) + reward
+            q_table[action, state] += alpha * (cum_reward - q_table[action, state])
+
+    sim_output.step_cache.append(steps_cache)
+    sim_output.reward_cache.append(rewards_cache)
+
+    sim_output.env_cache.append(env)  # array of np arrays
+    sim_output.name_cache.append("Monte Carlo")
+
+    return q_table, sim_output
+
+
 def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
     """
     REINFORCE with discrete policy gradient (manual weight updates)
@@ -193,22 +283,14 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
         probs = np.zeros(ACTION_DIM)
         for action in range(ACTION_DIM):
             action_encoded = encode_vector(action, ACTION_DIM)
-            probs[action] = softmax(
-                theta, action_encoded, state
-            )
+            probs[action] = softmax(theta, action_encoded, state)
         return probs / np.sum(probs)
 
-    def compute_cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
-        """Cumulative reward function"""
-        cum_reward = 0
-        for tau in range(t, len(rewards)):
-            cum_reward += gamma ** (tau - t) * rewards[tau]
-        return cum_reward
 
-    def get_entropy_bonus(action_probs: list) ->float:
+    def get_entropy_bonus(action_probs: list) -> float:
         entropy_bonus = 0
-        #action_probs=action_probs.numpy()
-      #  action_probs=np.squeeze(action_probs)
+        # action_probs=action_probs.numpy()
+        #  action_probs=np.squeeze(action_probs)
         for prob_action in action_probs:
             entropy_bonus -= prob_action * np.log(prob_action + 1e-5)
 
@@ -230,11 +312,11 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
             cum_reward = compute_cum_rewards(gamma, t, reward_trajectory)
 
             # Determine action probabilities with policy
-          #  action_probs = pi(state)
+            #  action_probs = pi(state)
             action_probs = probs_trajectory[t]
 
             # Encode action
-            phi = encode_vector(action,ACTION_DIM)
+            phi = encode_vector(action, ACTION_DIM)
 
             # Construct weighted state-action vector (average phi over all actions)
             weighted_phi = np.zeros((1, ACTION_DIM))
@@ -303,7 +385,7 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
             probs_trajectory.append(action_probs)
 
             # Check whether game is over
-            game_over = check_game_over(
+            game_over = check_game_over(episode,
                 next_state, cliff_pos, goal_pos, steps_cache[episode]
             )
 
@@ -311,7 +393,13 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
 
         # Update action probabilities at end of each episode
         theta = update_action_probabilities(
-            alpha, gamma, theta, state_trajectory, action_trajectory, reward_trajectory, probs_trajectory
+            alpha,
+            gamma,
+            theta,
+            state_trajectory,
+            action_trajectory,
+            reward_trajectory,
+            probs_trajectory,
         )
 
     all_probs = np.zeros([STATE_DIM, ACTION_DIM])
@@ -327,6 +415,7 @@ def discrete_policy_gradient(sim_input, sim_output) -> (np.array, list):
 
     return all_probs, sim_output
 
+
 def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
     """
     Deep discrete policy gradient (Tensorflow 2.0)
@@ -339,18 +428,25 @@ def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
     def cross_entropy_loss(prob_action: float, reward: float) -> float:
         """Compute cross entropy loss"""
         log_prob = tf.math.log(prob_action + 1e-5)
-        loss_actor = - reward * log_prob
+        loss_actor = -reward * log_prob
 
         return loss_actor
 
     def construct_actor_network(STATE_DIM: int, ACTION_DIM: int):
         """Construct the actor network with action probabilities as output"""
         inputs = layers.Input(shape=(STATE_DIM,))  # input dimension
-        hidden1 = layers.Dense(25, activation="relu", kernel_initializer=initializers.he_uniform())(inputs)
-        hidden2 = layers.Dense(25, activation="relu", kernel_initializer=initializers.he_uniform())(hidden1)
-        hidden3 = layers.Dense(25, activation="relu", kernel_initializer=initializers.he_uniform())(hidden2)
-        probabilities = layers.Dense(ACTION_DIM, kernel_initializer=initializers.Ones(), activation="softmax")(
-            hidden3)
+        hidden1 = layers.Dense(
+            25, activation="relu", kernel_initializer=initializers.he_uniform()
+        )(inputs)
+        hidden2 = layers.Dense(
+            25, activation="relu", kernel_initializer=initializers.he_uniform()
+        )(hidden1)
+        hidden3 = layers.Dense(
+            25, activation="relu", kernel_initializer=initializers.he_uniform()
+        )(hidden2)
+        probabilities = layers.Dense(
+            ACTION_DIM, kernel_initializer=initializers.Ones(), activation="softmax"
+        )(hidden3)
 
         actor_network = keras.Model(inputs=inputs, outputs=[probabilities])
 
@@ -363,21 +459,21 @@ def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
             cum_reward += gamma ** (tau - t) * rewards[tau]
         return cum_reward
 
-    def get_entropy_bonus(action_probs: np.array) ->float:
+    def get_entropy_bonus(action_probs: np.array) -> float:
         entropy_bonus = 0
-        action_probs=action_probs.numpy()
-        action_probs=np.squeeze(action_probs)
+        action_probs = action_probs.numpy()
+        action_probs = np.squeeze(action_probs)
         for prob_action in action_probs:
             entropy_bonus -= prob_action * tf.math.log(prob_action + 1e-5)
 
         return float(entropy_bonus)
 
     def update_actor_network(
-            gamma: float,
-            actor_network,
-            state_trajectory: list,
-            action_trajectory: list,
-            reward_trajectory: list,
+        gamma: float,
+        actor_network,
+        state_trajectory: list,
+        action_trajectory: list,
+        reward_trajectory: list,
     ) -> np.array:
 
         my_losses = []
@@ -476,7 +572,7 @@ def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
             reward_trajectory.append(reward)
 
             # Check whether game is over
-            game_over = check_game_over(
+            game_over = check_game_over(episode,
                 next_state, cliff_pos, goal_pos, steps_cache[episode]
             )
 
@@ -487,15 +583,18 @@ def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
         stored_state_trajectories.append(state_trajectory)
         stored_action_trajectories.append(action_trajectory)
         stored_reward_trajectories.append(reward_trajectory)
-        if episode % batch_size ==0 and episode>0:
-            for i in range(episode-batch_size, episode):
+        if episode % batch_size == 0 and episode > 0:
+            for i in range(episode - batch_size, episode):
                 state_trajectory = stored_state_trajectories[i]
                 action_trajectory = stored_action_trajectories[i]
                 reward_trajectory = stored_reward_trajectories[i]
                 actor_network = update_actor_network(
-                     gamma, actor_network, state_trajectory, action_trajectory, reward_trajectory
+                    gamma,
+                    actor_network,
+                    state_trajectory,
+                    action_trajectory,
+                    reward_trajectory,
                 )
-
 
     all_probs = np.zeros([STATE_DIM, ACTION_DIM])
     for state in range(48):
@@ -510,7 +609,6 @@ def deep_policy_gradient(sim_input, sim_output) -> (np.array, list):
     sim_output.name_cache.append("Deep policy gradient")
 
     return all_probs, sim_output
-
 
 
 def deepqlearning(sim_input, sim_output) -> (np.array, list):
@@ -559,8 +657,8 @@ def deepqlearning(sim_input, sim_output) -> (np.array, list):
     target_network.set_weights(q_network.get_weights())  # Copy network weights
 
     replay_buffer = []
-    min_buffer_size = 10
-    batch_size = 5  # Number of observations per update
+    min_buffer_size = 25  # 10
+    batch_size = 25  # Number of observations per update 5
     training = True
     step_counter = 0
     learning_frequency = batch_size  # Set equal to batch size for fair comparisons
@@ -619,7 +717,7 @@ def deepqlearning(sim_input, sim_output) -> (np.array, list):
                 replay_buffer.append(observation)
 
                 # Check whether game is over
-                game_over = check_game_over(
+                game_over = check_game_over(episode,
                     next_state, cliff_pos, goal_pos, steps_cache[episode]
                 )
 
@@ -645,7 +743,7 @@ def deepqlearning(sim_input, sim_output) -> (np.array, list):
 
                         # Select next action with highest q-value
                         # Check whether game is over (ignoring # steps)
-                        game_over_update = check_game_over(
+                        game_over_update = check_game_over(episode,
                             next_state, cliff_pos, goal_pos, 0
                         )
 

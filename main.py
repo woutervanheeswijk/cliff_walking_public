@@ -12,6 +12,7 @@ from plot import plot_steps, plot_rewards, console_output, plot_path
 from learning_algorithms import (
     qlearning,
     sarsa,
+    monte_carlo,
     deepqlearning,
     discrete_policy_gradient,
     deep_policy_gradient
@@ -36,9 +37,10 @@ if __name__ == "__main__":
     run_algorithms = {
  #       "Q-Learning",
         "SARSA",
-#        "Discrete policy gradient",
-        "Deep policy gradient",
- #       "Deep Q-Learning",
+        "Monte Carlo",
+  #      "Discrete policy gradient",
+  #      "Deep policy gradient",
+  #      "Deep Q-Learning",
     }
 
 
@@ -56,24 +58,28 @@ if __name__ == "__main__":
 
     # Run SARSA
     if "SARSA" in run_algorithms:
-        sim_input = sim_init(num_episodes=10000, gamma=1.0, alpha=0.1, epsilon=0.05)
+        sim_input = sim_init(num_episodes=10000, gamma=1.0, alpha=0.01, epsilon=0.1)
         q_table_sarsa, sim_output = sarsa(sim_input, sim_output)
+
+    # Run Monte Carlo
+    if "Monte Carlo" in run_algorithms:
+        sim_input = sim_init(num_episodes=10000, gamma=0.8, alpha=0.01, epsilon=0.1)
+        q_table_mc, sim_output = monte_carlo(sim_input, sim_output)
+
+    # Run Deep Q-learning
+    if "Deep Q-Learning" in run_algorithms:
+        sim_input = sim_init(num_episodes=10000, gamma=0.9, alpha=0.01, epsilon=0.05)
+        q_network, sim_output = deepqlearning(sim_input, sim_output)
 
     # Run discrete policy gradient
     if "Discrete policy gradient" in run_algorithms:
-        sim_input = sim_init(num_episodes=10000, gamma=1.0, alpha=0.0005, epsilon=0)
+        sim_input = sim_init(num_episodes=10000, gamma=0.8, alpha=0.001, epsilon=0)
         all_probs, sim_output = discrete_policy_gradient(sim_input, sim_output)
 
     # Run deep policy gradient
     if "Deep policy gradient" in run_algorithms:
-        sim_input = sim_init(num_episodes=10000, gamma=1.0, alpha=0.001, epsilon=0)
+        sim_input = sim_init(num_episodes=10000, gamma=1.0, alpha=0.0005, epsilon=0)
         all_probs, sim_output = deep_policy_gradient(sim_input, sim_output)
-
-    # Run Deep Q-learning
-    if "Deep Q-Learning" in run_algorithms:
-        sim_input = sim_init(num_episodes=10000, gamma=1.0, alpha=0.01, epsilon=0.05)
-        q_network, sim_output = deepqlearning(sim_input, sim_output)
-
 
     # Run Q-learning
     if "Q-Learning" in run_algorithms:

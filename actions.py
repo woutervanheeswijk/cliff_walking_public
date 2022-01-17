@@ -57,7 +57,7 @@ def get_reward(state: int, cliff_pos: np.array, goal_pos: int) -> int:
     """
 
     # Reward of -1 for each move (including terminating)
-    reward = -1
+    reward = -0.1
 
     # Reward of +100 for reaching goal
     if state == goal_pos:
@@ -68,3 +68,11 @@ def get_reward(state: int, cliff_pos: np.array, goal_pos: int) -> int:
         reward = -100
 
     return reward
+
+def compute_cum_rewards(gamma: float, t: int, rewards: np.array) -> float:
+    """Cumulative reward function"""
+    cum_reward = 0
+   # cum_reward = rewards[-1] #TEST!!!
+    for tau in range(t, len(rewards)):
+        cum_reward += gamma ** (tau - t) * rewards[tau]
+    return cum_reward
